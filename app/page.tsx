@@ -147,7 +147,7 @@ export default function Dashboard() {
           <button
             key={item.id}
             onClick={() => setPage(item.id)}
-            className={`flex-1 flex flex-col items-center gap-0.5 pt-4 pb-1.5 cursor-pointer text-[11px] font-medium border-none bg-transparent transition-colors ${page === item.id ? "text-[#4f8ef7]" : "text-[#8892a4]"}`}
+            className={`flex-1 flex flex-col items-center gap-0.5 pt-4 pb-3 cursor-pointer text-[11px] font-medium border-none bg-transparent transition-colors ${page === item.id ? "text-[#4f8ef7]" : "text-[#8892a4]"}`}
           >
             <i
               className={`fa-solid ${item.icon} text-[20px] transition-transform ${page === item.id ? "-translate-y-px" : ""}`}
