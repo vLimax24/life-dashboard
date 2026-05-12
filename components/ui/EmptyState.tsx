@@ -1,13 +1,15 @@
+import type { LucideIcon } from "lucide-react";
+
 interface EmptyStateProps {
-  icon: string;
+  icon: LucideIcon;
   text: string;
 }
 
-export function EmptyState({ icon, text }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, text }: EmptyStateProps) {
   return (
-    <div className="text-center py-6 text-[#8892a4] text-sm">
-      <span className="block text-[32px] mb-2 opacity-40">{icon}</span>
-      {text}
+    <div className="flex flex-col items-center justify-center py-7 text-[#8892a4] text-sm gap-2.5">
+      <Icon size={28} strokeWidth={1.5} className="opacity-30" />
+      <span className="text-[13px]">{text}</span>
     </div>
   );
 }

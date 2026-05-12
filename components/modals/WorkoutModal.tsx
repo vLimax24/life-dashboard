@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
-import { Modal, FormGroup, FormInput, FormSelect, SubmitButton, CancelButton } from "@/components/ui/Modal";
-import { S, getToday } from "@/lib/storage";
+import {
+  Modal,
+  FormGroup,
+  FormInput,
+  FormSelect,
+  SubmitButton,
+  CancelButton,
+} from "@/components/ui/Modal";
+import { DB, getToday } from "@/lib/db";
 import type { Workout } from "@/lib/types";
 
 interface Props {
@@ -15,14 +22,18 @@ export function WorkoutModal({ open, onClose, onSaved }: Props) {
   const [dur, setDur] = useState("");
   const [note, setNote] = useState("");
 
-  const save = () => {
-    if (!dur) { onSaved("Bitte Dauer eingeben"); return; }
+  const save = async () => {
+    if (!dur) {
+      onSaved("Bitte Dauer eingeben");
+      return;
+    }
     const today = getToday();
-    const workouts = S.get<Workout[]>("workouts_" + today, []);
+    const workouts = await DB.get<Workout[]>("workouts_" + today, []);
     workouts.push({ id: Date.now(), type, dur: parseInt(dur), note });
-    S.set("workouts_" + today, workouts);
-    S.set("workout_" + today, 1);
-    setDur(""); setNote("");
+    await DB.set("workouts_" + today, workouts);
+    await DB.set("workout_" + today, 1);
+    setDur("");
+    setNote("");
     onClose();
     onSaved("💪 Training gespeichert!");
   };
@@ -30,17 +41,36 @@ export function WorkoutModal({ open, onClose, onSaved }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="Training loggen">
       <FormGroup label="Art des Trainings">
-        <FormSelect value={type} onChange={e => setType(e.target.value)}>
-          {["Fußball Training","Fußball Spiel","Krafttraining","Laufen","Radfahren","Schwimmen","Sonstiges"].map(t => (
-            <option key={t} value={t}>{t}</option>
+        <FormSelect value={type} onChange={(e) => setType(e.target.value)}>
+          {[
+            "Fußball Training",
+            "Fußball Spiel",
+            "Krafttraining",
+            "Laufen",
+            "Radfahren",
+            "Schwimmen",
+            "Sonstiges",
+          ].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
           ))}
         </FormSelect>
       </FormGroup>
       <FormGroup label="Dauer (Minuten)">
-        <FormInput type="number" placeholder="60" value={dur} onChange={e => setDur(e.target.value)} />
+        <FormInput
+          type="number"
+          placeholder="60"
+          value={dur}
+          onChange={(e) => setDur(e.target.value)}
+        />
       </FormGroup>
       <FormGroup label="Notizen (optional)">
-        <FormInput placeholder="z.B. 5km, 3 Sätze Bankdrücken..." value={note} onChange={e => setNote(e.target.value)} />
+        <FormInput
+          placeholder="z.B. 5km, 3 Sätze Bankdrücken..."
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
       </FormGroup>
       <SubmitButton onClick={save}>Training speichern 💪</SubmitButton>
       <CancelButton onClick={onClose} />

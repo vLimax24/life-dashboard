@@ -1,23 +1,26 @@
-export const S = {
-  get: <T>(key: string, def: T): T => {
-    if (typeof window === "undefined") return def;
+// storage.ts — thin wrapper kept for any legacy imports;
+// all real I/O goes through lib/db.ts (IndexedDB).
+export { DB, getToday } from "./db";
+
+/**
+ * One-time migration: copy every key from localStorage into IndexedDB,
+ * then mark done so we never repeat.
+ * Call this once from a top-level useEffect.
+ */
+export async function migrateFromLocalStorage(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem("__migrated_to_idb")) return;
+
+  const { DB } = await import("./db");
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || key === "__migrated_to_idb") continue;
     try {
-      const v = localStorage.getItem(key);
-      return v ? (JSON.parse(v) as T) : def;
-    } catch {
-      return def;
-    }
-  },
-  set: (key: string, value: unknown): void => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
+      const raw = localStorage.getItem(key);
+      if (raw === null) continue;
+      const parsed = JSON.parse(raw);
+      await DB.set(key, parsed);
     } catch {}
-  },
-};
-
-export const TODAY = new Date().toISOString().split("T")[0];
-
-export function getToday(): string {
-  return new Date().toISOString().split("T")[0];
+  }
+  localStorage.setItem("__migrated_to_idb", "1");
 }
