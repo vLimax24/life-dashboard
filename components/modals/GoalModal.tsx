@@ -8,7 +8,7 @@ import {
   SubmitButton,
   CancelButton,
 } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type { DailyGoal } from "@/lib/types";
 
 interface Props {
@@ -24,7 +24,7 @@ export function GoalModal({ open, onClose, onSaved }: Props) {
   const save = async () => {
     if (!text) return;
     const goals = await DB.get<DailyGoal[]>("daily_goals", []);
-    goals.push({ id: Date.now(), text, repeat, date: getToday() });
+    goals.push({ id: Date.now(), text, repeat, date: DB.getToday() });
     await DB.set("daily_goals", goals);
     setText("");
     onClose();

@@ -5,7 +5,7 @@ import { AddButton } from "@/components/ui/AddButton";
 import { Tabs } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormInput } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type { ExamPlan } from "@/lib/types";
 import { GraduationCap, Timer, Bot, Lightbulb, Trash2 } from "lucide-react";
 
@@ -39,7 +39,7 @@ const FOCUS_TIPS = [
 ];
 
 export function LearnPage({ onAddExam, onToast, refreshKey }: Props) {
-  const today = getToday();
+  const today = DB.getToday();
   const [tab, setTab] = useState("plan");
   const [exams, setExams] = useState<ExamPlan[]>([]);
   const [timerMins, setTimerMins] = useState(25);

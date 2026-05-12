@@ -1,4 +1,4 @@
-import { DB } from "./db";
+import * as DB from "@/lib/db";
 
 export async function getStreak(prefix: string): Promise<number> {
   let streak = 0;

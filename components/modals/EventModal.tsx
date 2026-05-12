@@ -8,7 +8,7 @@ import {
   SubmitButton,
   CancelButton,
 } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type { Event } from "@/lib/types";
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
 
 export function EventModal({ open, onClose, onSaved, initialDate }: Props) {
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(initialDate || getToday());
+  const [date, setDate] = useState(initialDate || DB.getToday());
   const [type, setType] = useState<Event["type"]>("other");
   const [subject, setSubject] = useState("");
 

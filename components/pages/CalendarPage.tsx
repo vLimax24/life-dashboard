@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type { Event } from "@/lib/types";
 import { CalendarDays, List } from "lucide-react";
 
@@ -42,7 +42,7 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 export function CalendarPage({ onAddEvent, refreshKey }: Props) {
-  const today = getToday();
+  const today = DB.getToday();
   const now = new Date();
   const [calYear, setCalYear] = useState(now.getFullYear());
   const [calMonth, setCalMonth] = useState(now.getMonth());

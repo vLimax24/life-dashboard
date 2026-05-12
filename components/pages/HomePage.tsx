@@ -4,7 +4,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StreakGrid } from "@/components/ui/StreakGrid";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import { getStreak } from "@/lib/streaks";
 import type { DailyGoal, Event, ExamPlan } from "@/lib/types";
 import {
@@ -40,7 +40,7 @@ interface Props {
 }
 
 export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
-  const today = getToday();
+  const today = DB.getToday();
   const [water, setWater] = useState(0);
   const [quote, setQuote] = useState<string | null>(null);
   const [name, setName] = useState("");

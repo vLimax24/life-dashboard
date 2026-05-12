@@ -5,7 +5,7 @@ import { AddButton } from "@/components/ui/AddButton";
 import { Tabs } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StreakGrid } from "@/components/ui/StreakGrid";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import { getStreak } from "@/lib/streaks";
 import type {
   Workout,
@@ -45,7 +45,7 @@ export function FitnessPage({
   onToast,
   refreshKey,
 }: Props) {
-  const today = getToday();
+  const today = DB.getToday();
   const [tab, setTab] = useState("training");
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [fbEntries, setFbEntries] = useState<FootballEntry[]>([]);

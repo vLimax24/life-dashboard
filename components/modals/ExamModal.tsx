@@ -8,7 +8,7 @@ import {
   SubmitButton,
   CancelButton,
 } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import { generatePrepPlan } from "@/lib/examPlanner";
 import type { ExamPlan, Event } from "@/lib/types";
 
@@ -20,7 +20,7 @@ interface Props {
 
 export function ExamModal({ open, onClose, onSaved }: Props) {
   const [subject, setSubject] = useState("");
-  const [date, setDate] = useState(getToday());
+  const [date, setDate] = useState(DB.getToday());
   const [type, setType] = useState<"klausur" | "test">("klausur");
   const [topic, setTopic] = useState("");
 
@@ -37,7 +37,7 @@ export function ExamModal({ open, onClose, onSaved }: Props) {
       date,
       type,
       topic,
-      createdAt: getToday(),
+      createdAt: DB.getToday(),
       plan,
     });
     await DB.set("exam_plans", exams);

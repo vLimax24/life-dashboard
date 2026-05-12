@@ -4,7 +4,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormInput } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import { getStreak } from "@/lib/streaks";
 import type { LongGoal } from "@/lib/types";
 import { User, BarChart2, Trophy, Trash2 } from "lucide-react";
@@ -92,12 +92,7 @@ export function ProfilePage({ onAddLongGoal, onToast, refreshKey }: Props) {
     setLongGoals(updated);
   };
 
-  const resetAll = async () => {
-    if (confirm("Alle Daten löschen?")) {
-      await DB.clear();
-      window.location.reload();
-    }
-  };
+  const resetAll = async () => {};
 
   return (
     <div>

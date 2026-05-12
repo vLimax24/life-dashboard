@@ -8,7 +8,7 @@ import {
   SubmitButton,
   CancelButton,
 } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type {
   FootballEntry,
   FootballGoal,
@@ -29,7 +29,7 @@ export function FootballModal({ open, onClose, onSaved }: FootballProps) {
   const [note, setNote] = useState("");
 
   const save = async () => {
-    const today = getToday();
+    const today = DB.getToday();
     const entries = await DB.get<FootballEntry[]>("football_entries", []);
     entries.push({
       id: Date.now(),
@@ -135,7 +135,7 @@ export function FoodModal({ open, onClose, onSaved }: FoodProps) {
 
   const save = async () => {
     if (!name) return;
-    const today = getToday();
+    const today = DB.getToday();
     const foods = await DB.get<FoodEntry[]>("food_" + today, []);
     foods.push({
       id: Date.now(),

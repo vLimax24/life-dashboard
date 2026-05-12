@@ -8,7 +8,7 @@ import {
   SubmitButton,
   CancelButton,
 } from "@/components/ui/Modal";
-import { DB, getToday } from "@/lib/db";
+import * as DB from "@/lib/db";
 import type { Workout } from "@/lib/types";
 
 interface Props {
@@ -27,7 +27,7 @@ export function WorkoutModal({ open, onClose, onSaved }: Props) {
       onSaved("Bitte Dauer eingeben");
       return;
     }
-    const today = getToday();
+    const today = DB.getToday();
     const workouts = await DB.get<Workout[]>("workouts_" + today, []);
     workouts.push({ id: Date.now(), type, dur: parseInt(dur), note });
     await DB.set("workouts_" + today, workouts);
