@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { StreakGrid } from "@/components/ui/StreakGrid";
 import * as DB from "@/lib/db";
 import { computeStreak } from "@/lib/streaks";
 import type { DailyGoal, Event, ExamPlan } from "@/lib/types";
@@ -15,34 +14,309 @@ import {
   CalendarClock,
   BookOpen,
   Trash2,
-  Hand,
-  CircleDot,
-  Target,
-  Plus,
   Zap,
+  Plus,
+  Minus,
 } from "lucide-react";
 
 const QUOTES = [
-  '"Disziplin ist die Brücke zwischen Zielen und Erfolg."',
-  '"Du musst dich nicht großartig fühlen, um anzufangen. Aber du musst anfangen, um dich großartig zu fühlen."',
-  '"Jeder Tag ist eine neue Chance, besser zu werden."',
-  '"Kleine Schritte täglich führen zu großen Ergebnissen."',
-  '"Die Investition in Wissen bringt immer die besten Zinsen."',
-  '"Nicht Talent, sondern Konsequenz entscheidet über Erfolg."',
+  "Disziplin ist die Brücke zwischen Zielen und Erfolg.",
+  "Kleine Schritte täglich führen zu großen Ergebnissen.",
+  "Nicht Talent, sondern Konsequenz entscheidet über Erfolg.",
+  "Jeder Tag ist eine neue Chance, besser zu werden.",
+  "Die Investition in Wissen bringt immer die besten Zinsen.",
 ];
 
-interface StreakDef {
-  key: string;
-  label: string;
-  target: number;
-  color: string;
+interface HomeworkItem {
+  id: number;
+  text: string;
+  subject?: string;
+  dueDate?: string;
+  done: boolean;
+  createdAt: string;
 }
 
-const STREAK_DEFS: StreakDef[] = [
-  { key: "water_", label: "💧 Wasser", target: 8, color: "#60a5fa" },
-  { key: "study_", label: "📚 Gelernt", target: 1, color: "#818cf8" },
-  { key: "workout_", label: "💪 Training", target: 1, color: "#4ade80" },
-];
+const SUBJECT_MAP: Record<string, string> = {
+  math: "Mathe",
+  mathe: "Mathe",
+  deutsch: "Deutsch",
+  de: "Deutsch",
+  englisch: "Englisch",
+  en: "Englisch",
+  physik: "Physik",
+  ph: "Physik",
+  chemie: "Chemie",
+  bio: "Biologie",
+  biologie: "Biologie",
+  geo: "Geografie",
+  geschichte: "Geschichte",
+  sport: "Sport",
+  kunst: "Kunst",
+};
+
+const WEEKDAY_MAP: Record<string, number> = {
+  montag: 1,
+  mo: 1,
+  dienstag: 2,
+  di: 2,
+  mittwoch: 3,
+  mi: 3,
+  donnerstag: 4,
+  do: 4,
+  freitag: 5,
+  fr: 5,
+  samstag: 6,
+  sa: 6,
+};
+
+function parseHomework(raw: string): Partial<HomeworkItem> {
+  const parts = raw.trim().split(/\s+/);
+  let subject: string | undefined;
+  let dueDate: string | undefined;
+  const rest: string[] = [];
+  for (const p of parts) {
+    const l = p.toLowerCase().replace(/[.,!?]$/, "");
+    if (SUBJECT_MAP[l]) subject = SUBJECT_MAP[l];
+    else if (WEEKDAY_MAP[l] !== undefined) {
+      const target = WEEKDAY_MAP[l];
+      const now = new Date();
+      const diff = (target - now.getDay() + 7) % 7 || 7;
+      const d = new Date(now);
+      d.setDate(d.getDate() + diff);
+      dueDate = d.toISOString().split("T")[0];
+    } else rest.push(p);
+  }
+  return { subject, dueDate, text: rest.join(" ") || raw };
+}
+
+// ─── Pushup Ring Tracker ──────────────────────────────────────────────────────
+
+function PushupTracker({ refreshKey }: { refreshKey: number }) {
+  const today = DB.getToday();
+  const GOAL = 100;
+  const [count, setCount] = useState(0);
+  const [adding, setAdding] = useState(10);
+  const [streak, setStreak] = useState(0);
+  const [burst, setBurst] = useState(false);
+
+  const load = useCallback(async () => {
+    const [val, map] = await Promise.all([
+      DB.get<number>("pushups_" + today, 0),
+      DB.getByPrefix<number>("pushups_"),
+    ]);
+    setCount(val);
+    const goalMap: Record<string, number> = {};
+    for (const [k, v] of Object.entries(map)) goalMap[k] = v >= GOAL ? 1 : 0;
+    setStreak(computeStreak(goalMap, "pushups_", 1));
+  }, [today]);
+
+  useEffect(() => {
+    load();
+  }, [load, refreshKey]);
+
+  const add = async (n: number) => {
+    const newVal = Math.max(0, Math.min(999, count + n));
+    setCount(newVal);
+    setBurst(true);
+    setTimeout(() => setBurst(false), 350);
+    await DB.set("pushups_" + today, newVal);
+  };
+
+  const pct = Math.min(1, count / GOAL);
+  const done = count >= GOAL;
+
+  // SVG ring
+  const R = 46;
+  const circumference = 2 * Math.PI * R;
+  const dashOffset = circumference * (1 - pct);
+
+  return (
+    <Card className={done ? "border-[#4ade80]/30" : ""}>
+      <div className="flex items-center justify-between mb-4">
+        <CardTitle icon={Zap}>Liegestütze</CardTitle>
+        {streak > 0 && (
+          <span className="text-[12px] text-[#f59e0b] font-semibold flex items-center gap-1">
+            <Flame size={12} /> {streak}d Streak
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-4">
+        {/* SVG Ring */}
+        <div className="relative shrink-0 w-[120px] h-[120px]">
+          <svg width="120" height="120" viewBox="0 0 120 120">
+            <circle
+              cx="60"
+              cy="60"
+              r={R}
+              fill="none"
+              stroke="#1e2535"
+              strokeWidth="9"
+            />
+            <circle
+              cx="60"
+              cy="60"
+              r={R}
+              fill="none"
+              stroke={done ? "#4ade80" : "#4f8ef7"}
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={dashOffset}
+              transform="rotate(-90 60 60)"
+              style={{
+                transition:
+                  "stroke-dashoffset 0.45s cubic-bezier(0.4,0,0.2,1), stroke 0.3s",
+              }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span
+              className="text-[26px] font-bold font-mono leading-none transition-all duration-200"
+              style={{
+                color: done ? "#4ade80" : "#f0f2f7",
+                transform: burst ? "scale(1.18)" : "scale(1)",
+              }}
+            >
+              {count}
+            </span>
+            <span className="text-[11px] text-[#4a5568] mt-0.5">/ {GOAL}</span>
+            {done && (
+              <span className="text-[9px] text-[#4ade80] font-bold mt-0.5">
+                DONE ✓
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex-1 space-y-3">
+          {/* Set size */}
+          <div className="flex gap-1.5 flex-wrap">
+            {[5, 10, 15, 20, 25].map((n) => (
+              <button
+                key={n}
+                onClick={() => setAdding(n)}
+                className={`px-2.5 py-1 rounded-[8px] text-[12px] font-semibold transition-all ${
+                  adding === n
+                    ? "bg-[#4f8ef7] text-white"
+                    : "bg-[#1e2535] text-[#8892a4]"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+
+          {/* +/- */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => add(adding)}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-[#4f8ef7] text-white rounded-[10px] py-2.5 text-[15px] font-bold active:scale-95 transition-transform"
+            >
+              <Plus size={15} />
+              {adding}
+            </button>
+            <button
+              onClick={() => add(-adding)}
+              className="bg-[#1e2535] text-[#8892a4] rounded-[10px] w-10 flex items-center justify-center hover:text-white transition-colors"
+            >
+              <Minus size={14} />
+            </button>
+          </div>
+
+          <p className="text-[12px] text-[#8892a4]">
+            {done
+              ? count > GOAL
+                ? `+${count - GOAL} extra 🔥`
+                : "Tagesziel erreicht! 💪"
+              : `Noch ${GOAL - count} übrig`}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress dots */}
+      <div className="mt-3.5 flex gap-[3px]">
+        {Array.from({ length: 20 }, (_, i) => (
+          <div
+            key={i}
+            className="flex-1 h-1 rounded-full transition-all duration-300"
+            style={{
+              background:
+                i < Math.round(pct * 20)
+                  ? done
+                    ? "#4ade80"
+                    : "#4f8ef7"
+                  : "#1e2535",
+            }}
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Water Tracker ────────────────────────────────────────────────────────────
+
+function WaterTracker({
+  water,
+  onToggle,
+}: {
+  water: number;
+  onToggle: (i: number) => void;
+}) {
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <CardTitle icon={Droplets}>Wasser</CardTitle>
+        <span className="text-[13px] font-bold text-[#60a5fa] font-mono">
+          {water} / 8
+        </span>
+      </div>
+      <div
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: "repeat(8, 1fr)" }}
+      >
+        {Array.from({ length: 8 }, (_, i) => (
+          <button
+            key={i}
+            onClick={() => onToggle(i)}
+            className="relative overflow-hidden rounded-[4px_4px_7px_7px] transition-all duration-300 active:scale-90"
+            style={{
+              aspectRatio: "0.65",
+              border: `1.5px solid ${i < water ? "#3b82f6" : "rgba(255,255,255,0.07)"}`,
+              background:
+                i < water
+                  ? "linear-gradient(180deg,#93c5fd,#2563eb)"
+                  : "#1e2535",
+            }}
+          >
+            <Droplets
+              size={10}
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%,-50%)",
+                color:
+                  i < water
+                    ? "rgba(255,255,255,0.9)"
+                    : "rgba(255,255,255,0.12)",
+              }}
+            />
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-[#4a5568] text-center mt-2">
+        {water >= 8
+          ? "✓ Ziel erreicht!"
+          : `${water * 250} ml · noch ${(8 - water) * 250} ml`}
+      </p>
+    </Card>
+  );
+}
+
+// ─── Props & Main ─────────────────────────────────────────────────────────────
 
 interface Props {
   onAddEvent: () => void;
@@ -52,20 +326,36 @@ interface Props {
 
 export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
   const today = DB.getToday();
+
   const [water, setWater] = useState(0);
   const [quote, setQuote] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [greeting, setGreeting] = useState("");
   const [goals, setGoals] = useState<DailyGoal[]>([]);
   const [goalDone, setGoalDone] = useState<Record<number, boolean>>({});
   const [events, setEvents] = useState<Event[]>([]);
   const [activePlan, setActivePlan] = useState<ExamPlan | null>(null);
-  // streakMaps[prefix] = the full prefix map for that tracker
-  const [streakMaps, setStreakMaps] = useState<Record<string, Record<string, number>>>({});
-  const [streaks, setStreaks] = useState<Record<string, number>>({});
+  const [streaks, setStreaks] = useState<
+    { label: string; val: number; color: string }[]
+  >([]);
+  const [dailyFocus, setDailyFocus] = useState<{
+    school: string;
+    health: string;
+    personal: string;
+  } | null>(null);
+  const [homework, setHomework] = useState<HomeworkItem[]>([]);
+  const [hwInput, setHwInput] = useState("");
+  const hwRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    // One batch for scalar/list keys
-    const scalarKeys = ["profile_name", "daily_goals", "events", "exam_plans"];
+    const scalarKeys = [
+      "profile_name",
+      "daily_goals",
+      "events",
+      "exam_plans",
+      `daily_focus_${today}`,
+      "homework",
+    ];
     const [scalars, waterMap, studyMap, workoutMap] = await Promise.all([
       DB.getMany<unknown>(scalarKeys, null),
       DB.getByPrefix<number>("water_"),
@@ -73,51 +363,62 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
       DB.getByPrefix<number>("workout_"),
     ]);
 
-    const n = (scalars["profile_name"] as string) ?? "";
+    setName((scalars["profile_name"] as string) ?? "");
+    setWater((waterMap["water_" + today] ?? 0) as number);
+
+    setStreaks([
+      {
+        label: "💧 Wasser",
+        val: computeStreak(waterMap, "water_", 8),
+        color: "#60a5fa",
+      },
+      {
+        label: "📚 Lernen",
+        val: computeStreak(studyMap, "study_", 1),
+        color: "#818cf8",
+      },
+      {
+        label: "💪 Training",
+        val: computeStreak(workoutMap, "workout_", 1),
+        color: "#4ade80",
+      },
+    ]);
+
     const allGoals = (scalars["daily_goals"] as DailyGoal[]) ?? [];
-    const ev = (scalars["events"] as Event[]) ?? [];
-    const exams = (scalars["exam_plans"] as ExamPlan[]) ?? [];
-
-    setName(n);
-
-    const waterVal = (waterMap["water_" + today] ?? 0) as number;
-    setWater(waterVal);
-
-    // Compute all streaks from maps (no extra requests)
-    const maps: Record<string, Record<string, number>> = {
-      water_: waterMap,
-      study_: studyMap,
-      workout_: workoutMap,
-    };
-    setStreakMaps(maps);
-
-    const newStreaks: Record<string, number> = {};
-    for (const def of STREAK_DEFS) {
-      newStreaks[def.key] = computeStreak(maps[def.key], def.key, def.target);
-    }
-    setStreaks(newStreaks);
-
     const filtered = allGoals.filter(
-      (g) => g.repeat === "daily" || g.date === today
+      (g) => g.repeat === "daily" || g.date === today,
     );
     setGoals(filtered);
 
-    // Batch-fetch all goal_done keys for today in ONE request
-    const goalDoneKeys = filtered.map((g) => `goal_done_${g.id}_${today}`);
-    const doneBatch = await DB.getMany<boolean>(goalDoneKeys, false);
+    const doneBatch = await DB.getMany<boolean>(
+      filtered.map((g) => `goal_done_${g.id}_${today}`),
+      false,
+    );
     const doneMap: Record<number, boolean> = {};
-    for (const g of filtered) {
+    for (const g of filtered)
       doneMap[g.id] = doneBatch[`goal_done_${g.id}_${today}`] ?? false;
-    }
     setGoalDone(doneMap);
 
+    const ev = (scalars["events"] as Event[]) ?? [];
     setEvents(ev.filter((e) => e.date >= today).slice(0, 5));
-    const active = exams.filter((e) => e.date >= today);
-    setActivePlan(active[0] || null);
+    const exams = (scalars["exam_plans"] as ExamPlan[]) ?? [];
+    setActivePlan(exams.filter((e) => e.date >= today)[0] || null);
+
+    const focus = scalars[`daily_focus_${today}`] as {
+      school: string;
+      health: string;
+      personal: string;
+    } | null;
+    setDailyFocus(
+      focus?.school || focus?.health || focus?.personal ? focus : null,
+    );
+    setHomework((scalars["homework"] as HomeworkItem[]) ?? []);
   }, [today]);
 
   useEffect(() => {
     setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+    const h = new Date().getHours();
+    setGreeting(h < 12 ? "Guten Morgen" : h < 17 ? "Hey" : "Guten Abend");
   }, []);
 
   useEffect(() => {
@@ -125,33 +426,61 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
   }, [load, refreshKey]);
 
   const toggleWater = async (idx: number) => {
-    const cur = water;
-    const newVal = idx < cur ? idx : idx + 1;
+    const newVal = idx < water ? idx : idx + 1;
     await DB.set("water_" + today, newVal);
     setWater(newVal);
   };
 
   const toggleGoal = async (id: number) => {
-    const key = "goal_done_" + id + "_" + today;
     const was = goalDone[id] ?? false;
-    await DB.set(key, !was);
-    setGoalDone((prev) => ({ ...prev, [id]: !was }));
+    await DB.set(`goal_done_${id}_${today}`, !was);
+    setGoalDone((p) => ({ ...p, [id]: !was }));
   };
 
   const deleteGoal = async (id: number) => {
-    const allGoals = await DB.get<DailyGoal[]>("daily_goals", []);
+    const all = await DB.get<DailyGoal[]>("daily_goals", []);
     await DB.set(
       "daily_goals",
-      allGoals.filter((g) => g.id !== id)
+      all.filter((g) => g.id !== id),
     );
     load();
   };
 
-  const [greeting, setGreeting] = useState("");
-  useEffect(() => {
-    const h = new Date().getHours();
-    setGreeting(h < 12 ? "Guten Morgen" : h < 18 ? "Hey" : "Guten Abend");
-  }, []);
+  const addHomework = async () => {
+    if (!hwInput.trim()) return;
+    const parsed = parseHomework(hwInput);
+    const item: HomeworkItem = {
+      id: Date.now(),
+      text: parsed.text || hwInput,
+      subject: parsed.subject,
+      dueDate: parsed.dueDate,
+      done: false,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [item, ...homework];
+    setHomework(updated);
+    await DB.set("homework", updated);
+    setHwInput("");
+  };
+
+  const toggleHomework = async (id: number) => {
+    const updated = homework.map((i) =>
+      i.id === id ? { ...i, done: !i.done } : i,
+    );
+    setHomework(updated);
+    await DB.set("homework", updated);
+  };
+
+  const removeHomework = async (id: number) => {
+    const updated = homework.filter((i) => i.id !== id);
+    setHomework(updated);
+    await DB.set("homework", updated);
+  };
+
+  const doneGoals = goals.filter((g) => goalDone[g.id]).length;
+  const todayStep = activePlan?.plan.find((p) => p.date === today);
+  const activeHw = homework.filter((h) => !h.done);
+  const nextEvent = events[0];
 
   const eventColors: Record<string, string> = {
     exam: "#f87171",
@@ -168,456 +497,425 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
     other: "Termin",
   };
 
-  const doneGoals = goals.filter((g) => goalDone[g.id]).length;
-  const goalPct =
-    goals.length > 0 ? Math.round((doneGoals / goals.length) * 100) : 0;
-  const weekEvents = events.filter((e) => {
-    const d = new Date(e.date + "T12:00:00");
-    const now = new Date();
-    return d >= now && d <= new Date(now.getTime() + 7 * 86400000);
-  }).length;
-
-  const todayStep = activePlan?.plan.find((p) => p.date === today);
-  const waterStreak = streaks["water_"] ?? 0;
-
   return (
-    <div>
-      <div className="relative bg-gradient-to-br from-[#1a2540] to-[#1e1a3a] border border-blue-400/20 rounded-[14px] p-[18px] mb-3 overflow-hidden">
-        <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-[radial-gradient(circle,rgba(79,142,247,0.15),transparent_70%)]" />
-        <div className="text-[22px] font-bold flex items-center gap-2">
-          {greeting}
-          {name ? `, ${name}` : ""}{" "}
-          <Hand size={22} className="text-[#fbbf24]" />
-        </div>
-        <div className="text-sm text-[#8892a4] mt-0.5">
-          11. Klasse · Gymnasium Sachsen
-        </div>
-        {quote && (
-          <div className="text-[13px] text-white/70 mt-2.5 italic border-l-2 border-[#4f8ef7] pl-2.5">
-            {quote}
+    <div className="pt-1 pb-2">
+      {/* ══ Hero card ══════════════════════════════════════════════ */}
+      <div
+        className="relative rounded-[20px] overflow-hidden mb-3 px-5 pt-5 pb-5"
+        style={{
+          background:
+            "linear-gradient(140deg, #162040 0%, #1b1838 55%, #0f1117 100%)",
+        }}
+      >
+        {/* glow blobs */}
+        <div
+          className="absolute -top-12 -right-12 w-40 h-40 rounded-full pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(79,142,247,0.18) 0%, transparent 70%)",
+          }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-28 h-28 rounded-full pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(124,92,252,0.12) 0%, transparent 70%)",
+          }}
+        />
+
+        <div className="relative">
+          <p className="text-[13px] font-medium text-[#6b9fff] mb-1">
+            {greeting}
+            {name ? `, ${name}` : ""} 👋
+          </p>
+          <h1 className="text-[24px] font-bold leading-[1.2] mb-4 text-white">
+            Was machst du
+            <br />
+            heute möglich?
+          </h1>
+
+          {/* 3-stat row */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              {
+                val: `${doneGoals}/${goals.length}`,
+                label: "Ziele",
+                color: "#4ade80",
+              },
+              { val: `${water}/8`, label: "Wasser", color: "#60a5fa" },
+              {
+                val: String(events.length),
+                label: "Termine",
+                color: "#fbbf24",
+              },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="rounded-[12px] px-2 py-2.5 text-center"
+                style={{
+                  background: "rgba(0,0,0,0.28)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <p
+                  className="text-[17px] font-bold font-mono"
+                  style={{ color: s.color }}
+                >
+                  {s.val}
+                </p>
+                <p className="text-[10px] text-white/35 mt-0.5">{s.label}</p>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 mb-3">
-        {[
-          {
-            val: waterStreak,
-            label: "Tage Streak",
-            icon: <Flame size={11} className="inline mr-0.5" />,
-            color: "#22c55e",
-          },
-          {
-            val: weekEvents,
-            label: "Termine diese Woche",
-            icon: null,
-            color: "#fbbf24",
-          },
-          {
-            val: `${water}/8`,
-            label: "Gläser heute",
-            icon: null,
-            color: "#4f8ef7",
-          },
-          {
-            val: `${goalPct}%`,
-            label: "Tagesziele",
-            icon: null,
-            color: "#f472b6",
-          },
-        ].map((s, i) => (
-          <div key={i} className="bg-[#1e2535] rounded-lg p-3 text-center">
-            <div
-              className="text-[26px] font-bold font-mono"
+      {/* ══ Quote ═════════════════════════════════════════════════ */}
+      {quote && (
+        <div className="mb-3 flex items-start gap-2.5 px-4 py-3 rounded-[14px] bg-[#161b27] border border-white/[0.05]">
+          <span className="text-[#4f8ef7] text-[18px] leading-none font-serif mt-[-2px]">
+            "
+          </span>
+          <p className="text-[12.5px] text-[#6a7891] leading-relaxed italic">
+            {quote}
+          </p>
+        </div>
+      )}
+
+      {/* ══ Daily Focus pills (if set) ═════════════════════════════ */}
+      {dailyFocus && (
+        <div className="mb-3 flex gap-2">
+          {[
+            {
+              key: "school" as const,
+              emoji: "📚",
+              color: "#60a5fa",
+              label: "Schule",
+            },
+            {
+              key: "health" as const,
+              emoji: "💪",
+              color: "#4ade80",
+              label: "Fitness",
+            },
+            {
+              key: "personal" as const,
+              emoji: "✨",
+              color: "#a78bfa",
+              label: "Privat",
+            },
+          ]
+            .filter((i) => dailyFocus[i.key])
+            .map(({ key, emoji, color }) => (
+              <div
+                key={key}
+                className="flex-1 bg-[#161b27] border border-white/[0.07] rounded-[12px] px-2 py-2.5 flex flex-col items-center gap-1"
+              >
+                <span className="text-[14px]">{emoji}</span>
+                <p
+                  className="text-[11px] font-medium text-center leading-tight truncate w-full text-center"
+                  style={{ color }}
+                >
+                  {dailyFocus[key]}
+                </p>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* ══ Streaks ═══════════════════════════════════════════════ */}
+      <div className="flex gap-2 mb-3">
+        {streaks.map((s) => (
+          <div
+            key={s.label}
+            className="flex-1 bg-[#161b27] border border-white/[0.07] rounded-[14px] px-2 py-3 flex flex-col items-center gap-1.5"
+          >
+            <span
+              className="text-[22px] font-bold font-mono leading-none"
               style={{ color: s.color }}
             >
               {s.val}
-            </div>
-            <div className="text-[11px] text-[#8892a4] mt-0.5 flex items-center justify-center gap-0.5">
-              {s.icon}
+            </span>
+            <span className="text-[10px] text-[#4a5568] leading-tight text-center">
               {s.label}
-            </div>
+              <br />
+              Streak
+            </span>
           </div>
         ))}
       </div>
 
-      <Card>
-        <CardTitle icon={Droplets}>Wasser-Tracker</CardTitle>
-        <div
-          className="grid gap-1.5 mb-3"
-          style={{ gridTemplateColumns: "repeat(8, 1fr)" }}
-        >
-          {Array.from({ length: 8 }, (_, i) => (
+      {/* ══ Water ═════════════════════════════════════════════════ */}
+      <WaterTracker water={water} onToggle={toggleWater} />
+
+      {/* ══ Pushups ═══════════════════════════════════════════════ */}
+      <PushupTracker refreshKey={refreshKey} />
+
+      {/* ══ Urgent event banner ════════════════════════════════════ */}
+      {nextEvent &&
+        (() => {
+          const d = new Date(nextEvent.date + "T12:00:00");
+          const diff = Math.ceil((d.getTime() - Date.now()) / 86400000);
+          const urgent = diff <= 2;
+          return (
             <div
-              key={i}
-              onClick={() => toggleWater(i)}
-              className={`relative overflow-hidden rounded-[4px_4px_8px_8px] border-[1.5px] cursor-pointer transition-all flex items-center justify-center aspect-[0.7] ${i < water ? "border-blue-400" : "border-white/14 bg-[#1e2535]"}`}
+              className="mb-3 flex items-center gap-3 px-3.5 py-3 rounded-[14px] border"
+              style={{
+                background: urgent
+                  ? "rgba(248,113,113,0.07)"
+                  : "rgba(79,142,247,0.05)",
+                borderColor: urgent
+                  ? "rgba(248,113,113,0.22)"
+                  : "rgba(255,255,255,0.07)",
+              }}
             >
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-b-[6px] transition-all duration-400"
-                style={{
-                  height: i < water ? "100%" : "0%",
-                  background: "linear-gradient(180deg,#60a5fa,#3b82f6)",
-                }}
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: eventColors[nextEvent.type] }}
               />
-              <span className="relative z-10">
-                {i < water ? (
-                  <Droplets size={14} className="text-white" />
-                ) : (
-                  <CircleDot size={14} className="text-white/30" />
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="text-sm text-[#8892a4] text-center">
-          Bisher <span className="text-[#4f8ef7] font-semibold">{water}</span>{" "}
-          von 8 Gläsern (2 Liter)
-        </div>
-      </Card>
-
-      <Card>
-        <CardTitle icon={Flame}>Daily Streaks</CardTitle>
-        {STREAK_DEFS.map((def) => {
-          const map = streakMaps[def.key] ?? {};
-          const val = (map[def.key + today] ?? 0) as number;
-          const pct = Math.min(100, (val / def.target) * 100);
-          const s = streaks[def.key] ?? 0;
-          return (
-            <div key={def.key} className="flex items-center gap-2.5 mb-2">
-              <span className="text-[13px] font-medium w-[90px] shrink-0">
-                {def.label}
-              </span>
-              <div className="flex-1 h-1.5 bg-[#1e2535] rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: pct + "%", background: def.color }}
-                />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold truncate">
+                  {nextEvent.title}
+                </p>
+                <p className="text-[11px] text-[#4a5568]">
+                  {diff === 0
+                    ? "Heute"
+                    : diff === 1
+                      ? "Morgen"
+                      : `in ${diff} Tagen`}
+                </p>
               </div>
-              <span className="text-[12px] font-mono text-[#8892a4]">{s}d 🔥</span>
+              <span
+                className={`text-[10px] font-bold px-2 py-1 rounded-full badge-${nextEvent.type}`}
+              >
+                {eventLabels[nextEvent.type]}
+              </span>
             </div>
           );
-        })}
-        <div className="mt-3">
-          <div className="text-[12px] text-[#8892a4] mb-1.5">
-            Letzte 91 Tage
-          </div>
-          <StreakGrid
-            prefix="water_"
-            target={8}
-            color="#60a5fa"
-            prefetchedMap={streakMaps["water_"]}
-          />
+        })()}
+
+      {/* ══ Goals ════════════════════════════════════════════════ */}
+      <Card>
+        <div className="flex items-center justify-between mb-2.5">
+          <CardTitle icon={CheckSquare}>Tagesziele</CardTitle>
+          <span className="text-[12px] text-[#4a5568]">
+            {doneGoals}/{goals.length}
+          </span>
         </div>
-      </Card>
-
-      <Card>
-        <CardTitle icon={CalendarClock}>Nächste Termine</CardTitle>
-        {events.length === 0 ? (
-          <EmptyState icon={CalendarDays} text="Keine Termine eingetragen" />
-        ) : (
-          events.map((e) => {
-            const d = new Date(e.date + "T12:00:00");
-            const dateStr = d.toLocaleDateString("de-DE", {
-              weekday: "short",
-              day: "2-digit",
-              month: "2-digit",
-            });
-            const diff = Math.ceil((d.getTime() - Date.now()) / 86400000);
-            const urgency = diff <= 2 ? "🚨 " : diff <= 5 ? "⚠️ " : "";
-            return (
-              <div
-                key={e.id}
-                className="flex items-start gap-3 p-2.5 bg-[#1e2535] rounded-lg mb-2 cursor-pointer hover:bg-white/7 transition-colors"
-              >
-                <div
-                  className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
-                  style={{
-                    background: eventColors[e.type] || eventColors.other,
-                  }}
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">
-                    {urgency}
-                    {e.title}
-                    {e.subject ? ` (${e.subject})` : ""}
-                  </div>
-                  <div className="text-xs text-[#8892a4] mt-0.5">
-                    {dateStr} · in {diff} Tag{diff !== 1 ? "en" : ""}
-                  </div>
-                </div>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold badge-${e.type}`}
-                >
-                  {eventLabels[e.type] || "Termin"}
-                </span>
-              </div>
-            );
-          })
-        )}
-        <AddButton onClick={onAddEvent}>Termin hinzufügen</AddButton>
-      </Card>
-
-      <Card>
-        <CardTitle icon={BookOpen}>Aktiver Lernplan</CardTitle>
-        {!activePlan ? (
-          <EmptyState icon={BookOpen} text="Kein aktiver Lernplan" />
-        ) : todayStep ? (
-          <div>
-            <div className="text-xs text-[#8892a4] mb-2">
-              {activePlan.subject} ·{" "}
-              {Math.ceil(
-                (new Date(activePlan.date + "T12:00:00").getTime() -
-                  Date.now()) /
-                  86400000
-              )}{" "}
-              Tage bis zur Prüfung
-            </div>
-            <div className="flex gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg items-start">
-              <div className="w-9 h-9 rounded-full bg-[#4f8ef7] text-white flex items-center justify-center text-sm font-bold font-mono shrink-0">
-                {todayStep.dayNum}
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">{todayStep.title}</div>
-                <div className="text-xs text-[#8892a4] mt-1">
-                  {todayStep.desc}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm text-[#8892a4]">
-            {activePlan.subject} ·{" "}
-            {Math.ceil(
-              (new Date(activePlan.date + "T12:00:00").getTime() - Date.now()) /
-                86400000
-            )}{" "}
-            Tage bis zur Prüfung
+        {goals.length > 0 && (
+          <div className="h-[3px] bg-[#1e2535] rounded-full mb-3 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${(doneGoals / goals.length) * 100}%`,
+                background: doneGoals === goals.length ? "#4ade80" : "#4f8ef7",
+              }}
+            />
           </div>
         )}
-      </Card>
-
-      <Card>
-        <CardTitle icon={CheckSquare}>Tagesziele</CardTitle>
         {goals.length === 0 ? (
           <EmptyState icon={CheckSquare} text="Keine Tagesziele" />
         ) : (
-          goals.map((g) => {
-            const done = goalDone[g.id] ?? false;
-            return (
-              <div
-                key={g.id}
-                className="flex items-start gap-3 p-3 bg-[#1e2535] rounded-lg mb-2"
-              >
-                <button
-                  onClick={() => toggleGoal(g.id)}
-                  className={`w-[22px] h-[22px] rounded-md border-[1.5px] flex items-center justify-center shrink-0 mt-px transition-all ${done ? "bg-[#22c55e] border-[#22c55e]" : "bg-transparent border-white/20"}`}
+          <div className="space-y-1.5">
+            {goals.map((g) => {
+              const done = goalDone[g.id] ?? false;
+              return (
+                <div
+                  key={g.id}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-[10px] transition-colors ${done ? "bg-[#141f14]" : "bg-[#1e2535]"}`}
                 >
-                  {done && <span className="text-white text-xs">✓</span>}
-                </button>
-                <div className="flex-1">
-                  <div
-                    className={`text-sm ${done ? "line-through text-[#8892a4]" : ""}`}
+                  <button
+                    onClick={() => toggleGoal(g.id)}
+                    className={`w-5 h-5 rounded-[5px] border-[1.5px] flex items-center justify-center shrink-0 transition-all ${done ? "bg-[#4ade80] border-[#4ade80]" : "border-white/[0.18]"}`}
+                  >
+                    {done && (
+                      <span className="text-[#0f1117] text-[10px] font-bold">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                  <p
+                    className={`flex-1 text-[13px] leading-snug ${done ? "line-through text-[#4a5568]" : ""}`}
                   >
                     {g.text}
-                  </div>
-                  <div className="text-[11px] text-[#8892a4] mt-0.5">
-                    {g.repeat === "daily" ? "Täglich" : "Heute"}
+                  </p>
+                  <button
+                    onClick={() => deleteGoal(g.id)}
+                    className="text-[#323d50] hover:text-[#f87171] p-1 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-2">
+          <AddButton onClick={onAddGoal}>Ziel hinzufügen</AddButton>
+        </div>
+      </Card>
+
+      {/* ══ Homework ════════════════════════════════════════════════ */}
+      <Card>
+        <CardTitle icon={Zap}>Hausaufgaben</CardTitle>
+        <div className="flex gap-2 mb-2.5">
+          <input
+            ref={hwRef}
+            value={hwInput}
+            onChange={(e) => setHwInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addHomework()}
+            placeholder='"Mathe S.42 Freitag"'
+            className="flex-1 bg-[#1e2535] border border-white/[0.09] rounded-[10px] px-3 py-2.5 text-[14px] text-[#f0f2f7] placeholder-[#323d50] focus:outline-none focus:border-[#4f8ef7]/50 transition-colors"
+          />
+          <button
+            onClick={addHomework}
+            disabled={!hwInput.trim()}
+            className="bg-[#4f8ef7] text-white rounded-[10px] w-10 flex items-center justify-center disabled:opacity-35 active:scale-95 transition-all"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+        {activeHw.length === 0 ? (
+          <p className="text-[12px] text-[#4a5568] text-center py-1">
+            Alle erledigt ✓
+          </p>
+        ) : (
+          <div>
+            {activeHw.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-2.5 py-2.5 border-b border-white/[0.05] last:border-0"
+              >
+                <button
+                  onClick={() => toggleHomework(item.id)}
+                  className="w-4 h-4 rounded border border-white/[0.18] flex items-center justify-center shrink-0 hover:border-[#4ade80] transition-colors"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px]">{item.text}</p>
+                  <div className="flex gap-2 mt-0.5">
+                    {item.subject && (
+                      <span className="text-[10px] text-[#60a5fa]">
+                        {item.subject}
+                      </span>
+                    )}
+                    {item.dueDate && (
+                      <span className="text-[10px] text-[#f59e0b]">
+                        {new Date(
+                          item.dueDate + "T12:00:00",
+                        ).toLocaleDateString("de-DE", {
+                          weekday: "short",
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
-                  onClick={() => deleteGoal(g.id)}
-                  className="text-[#8892a4] hover:text-[#f87171] transition-colors p-1"
+                  onClick={() => removeHomework(item.id)}
+                  className="text-[#323d50] hover:text-[#f87171] p-1 transition-colors"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={13} />
                 </button>
               </div>
-            );
-          })
+            ))}
+          </div>
         )}
-        <AddButton onClick={onAddGoal}>Ziel hinzufügen</AddButton>
+        {homework.filter((h) => h.done).length > 0 && (
+          <p className="text-[10px] text-[#323d50] text-center mt-2">
+            {homework.filter((h) => h.done).length} erledigt
+          </p>
+        )}
       </Card>
 
-      {/* Daily Focus mini-widget */}
-      <DailyFocusMini today={today} refreshKey={refreshKey} />
-
-      {/* Homework Quick Capture */}
-      <HomeworkCapture refreshKey={refreshKey} onToast={() => {}} />
-    </div>
-  );
-}
-
-// ─── Daily Focus Mini Widget ──────────────────────────────────────────────────
-function DailyFocusMini({ today, refreshKey }: { today: string; refreshKey: number }) {
-  const [focus, setFocus] = useState<{ school: string; health: string; personal: string } | null>(null);
-
-  useEffect(() => {
-    DB.get<{ school: string; health: string; personal: string } | null>(`daily_focus_${today}`, null).then(setFocus);
-  }, [today, refreshKey]);
-
-  if (!focus || (!focus.school && !focus.health && !focus.personal)) return null;
-
-  const items = [
-    { key: "school" as const, emoji: "📚", color: "#60a5fa" },
-    { key: "health" as const, emoji: "💪", color: "#4ade80" },
-    { key: "personal" as const, emoji: "✨", color: "#a78bfa" },
-  ].filter(i => focus[i.key]);
-
-  return (
-    <Card>
-      <CardTitle icon={Target}>Heutiger Fokus</CardTitle>
-      <div className="flex gap-2 flex-wrap">
-        {items.map(({ key, emoji, color }) => (
-          <div key={key} className="flex items-center gap-1.5 bg-[#1e2535] rounded-xl px-3 py-1.5 text-[13px]">
-            <span>{emoji}</span>
-            <span style={{ color }} className="font-medium">{focus[key]}</span>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── Homework Quick Capture ───────────────────────────────────────────────────
-interface HomeworkItem {
-  id: number;
-  text: string;
-  subject?: string;
-  dueDate?: string;
-  done: boolean;
-  createdAt: string;
-}
-
-const SUBJECT_SHORTCUTS: Record<string, string> = {
-  math: "Mathe", mathe: "Mathe", m: "Mathe",
-  deutsch: "Deutsch", de: "Deutsch", d: "Deutsch",
-  englisch: "Englisch", en: "Englisch", e: "Englisch",
-  physik: "Physik", ph: "Physik",
-  chemie: "Chemie", ch: "Chemie",
-  bio: "Biologie", biologie: "Biologie",
-  geo: "Geografie", geografie: "Geografie",
-  geschichte: "Geschichte", ge: "Geschichte",
-  sport: "Sport", sp: "Sport",
-  kunst: "Kunst", ku: "Kunst",
-};
-
-const WEEKDAYS: Record<string, number> = {
-  montag: 1, mo: 1, dienstag: 2, di: 2, mittwoch: 3, mi: 3,
-  donnerstag: 4, do: 4, freitag: 5, fr: 5, samstag: 6, sa: 6, sonntag: 0, so: 0,
-};
-
-function parseHomework(raw: string): Partial<HomeworkItem> {
-  const parts = raw.trim().split(/\s+/);
-  let subject: string | undefined;
-  let dueDate: string | undefined;
-  const textParts: string[] = [];
-
-  for (const part of parts) {
-    const lower = part.toLowerCase().replace(/[.,!?]$/, "");
-    if (SUBJECT_SHORTCUTS[lower]) {
-      subject = SUBJECT_SHORTCUTS[lower];
-    } else if (WEEKDAYS[lower] !== undefined) {
-      const target = WEEKDAYS[lower];
-      const now = new Date();
-      const diff = ((target - now.getDay()) + 7) % 7 || 7;
-      const due = new Date(now);
-      due.setDate(due.getDate() + diff);
-      dueDate = due.toISOString().split("T")[0];
-    } else {
-      textParts.push(part);
-    }
-  }
-
-  return { subject, dueDate, text: textParts.join(" ") || raw };
-}
-
-function HomeworkCapture({ refreshKey, onToast }: { refreshKey: number; onToast: (m: string) => void }) {
-  const [items, setItems] = useState<HomeworkItem[]>([]);
-  const [input, setInput] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    DB.get<HomeworkItem[]>("homework", []).then(setItems);
-  }, [refreshKey]);
-
-  const add = async () => {
-    if (!input.trim()) return;
-    const parsed = parseHomework(input);
-    const item: HomeworkItem = {
-      id: Date.now(),
-      text: parsed.text || input,
-      subject: parsed.subject,
-      dueDate: parsed.dueDate,
-      done: false,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [item, ...items];
-    setItems(updated);
-    await DB.set("homework", updated);
-    setInput("");
-    inputRef.current?.focus();
-  };
-
-  const toggle = async (id: number) => {
-    const updated = items.map(i => i.id === id ? { ...i, done: !i.done } : i);
-    setItems(updated);
-    await DB.set("homework", updated);
-  };
-
-  const remove = async (id: number) => {
-    const updated = items.filter(i => i.id !== id);
-    setItems(updated);
-    await DB.set("homework", updated);
-  };
-
-  const active = items.filter(i => !i.done);
-  const done = items.filter(i => i.done);
-
-  return (
-    <Card>
-      <CardTitle icon={Zap}>Hausaufgaben</CardTitle>
-      <div className="flex gap-2 mb-3">
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && add()}
-          placeholder='z.B. "Mathe S.42 Freitag"'
-          className="flex-1 bg-[#1e2535] border border-white/[0.12] rounded-xl px-3 py-2 text-[13px] text-[#f0f2f7] placeholder-[#4a5568] focus:outline-none focus:border-[#4f8ef7] transition-colors"
-        />
-        <button
-          onClick={add}
-          disabled={!input.trim()}
-          className="bg-[#4f8ef7]/20 text-[#4f8ef7] rounded-xl px-3 flex items-center disabled:opacity-40 hover:bg-[#4f8ef7]/30 transition-colors"
-        >
-          <Plus size={16} />
-        </button>
-      </div>
-      <p className="text-[11px] text-[#4a5568] mb-3">Tipp: Fach + Tag automatisch erkannt (z.B. "Mathe Freitag")</p>
-
-      {active.length === 0 && <p className="text-[13px] text-[#4a5568] text-center py-2">Keine offenen Hausaufgaben ✓</p>}
-
-      {active.map(item => (
-        <div key={item.id} className="flex items-center gap-2.5 py-2 border-b border-white/[0.05] last:border-0">
-          <button onClick={() => toggle(item.id)} className="w-5 h-5 rounded border border-white/20 flex items-center justify-center shrink-0 hover:border-[#4ade80] transition-colors">
-            <span className="text-[10px] opacity-0 hover:opacity-100">✓</span>
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px]">{item.text}</p>
-            <div className="flex gap-2 mt-0.5">
-              {item.subject && <span className="text-[10px] text-[#60a5fa]">{item.subject}</span>}
-              {item.dueDate && <span className="text-[10px] text-[#f59e0b]">{new Date(item.dueDate + "T12:00:00").toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}</span>}
+      {/* ══ Exam plan ════════════════════════════════════════════ */}
+      {activePlan && (
+        <Card>
+          <CardTitle icon={BookOpen}>Aktiver Lernplan</CardTitle>
+          <div className="flex items-start gap-3 bg-[#1e2535] rounded-[10px] p-3">
+            <div className="w-9 h-9 rounded-full bg-[#4f8ef7] text-white flex items-center justify-center text-[13px] font-bold shrink-0">
+              {todayStep ? todayStep.dayNum : "—"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold">{activePlan.subject}</p>
+              {todayStep ? (
+                <>
+                  <p className="text-[13px] font-medium mt-0.5">
+                    {todayStep.title}
+                  </p>
+                  <p className="text-[11px] text-[#8892a4] mt-0.5">
+                    {todayStep.desc}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12px] text-[#8892a4] mt-0.5">
+                  Noch{" "}
+                  {Math.ceil(
+                    (new Date(activePlan.date + "T12:00:00").getTime() -
+                      Date.now()) /
+                      86400000,
+                  )}{" "}
+                  Tage
+                </p>
+              )}
             </div>
           </div>
-          <button onClick={() => remove(item.id)} className="text-[#4a5568] hover:text-[#f87171] p-1 transition-colors">
-            <Trash2 size={13} />
+        </Card>
+      )}
+
+      {/* ══ Upcoming events ══════════════════════════════════════ */}
+      <Card>
+        <div className="flex items-center justify-between mb-2.5">
+          <CardTitle icon={CalendarClock}>Termine</CardTitle>
+          <button
+            onClick={onAddEvent}
+            className="text-[12px] text-[#4f8ef7] flex items-center gap-1"
+          >
+            <Plus size={12} /> Neu
           </button>
         </div>
-      ))}
-
-      {done.length > 0 && (
-        <p className="text-[11px] text-[#4a5568] text-center mt-2">{done.length} erledigt</p>
-      )}
-    </Card>
+        {events.length === 0 ? (
+          <EmptyState icon={CalendarDays} text="Keine Termine" />
+        ) : (
+          <div className="space-y-1.5">
+            {events.map((e) => {
+              const diff = Math.ceil(
+                (new Date(e.date + "T12:00:00").getTime() - Date.now()) /
+                  86400000,
+              );
+              return (
+                <div
+                  key={e.id}
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#1e2535] rounded-[10px]"
+                >
+                  <div
+                    className="w-[7px] h-[7px] rounded-full shrink-0"
+                    style={{ background: eventColors[e.type] }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">
+                      {e.title}
+                      {e.subject ? ` · ${e.subject}` : ""}
+                    </p>
+                    <p className="text-[11px] text-[#4a5568]">
+                      {diff === 0
+                        ? "Heute"
+                        : diff === 1
+                          ? "Morgen"
+                          : `in ${diff} Tagen`}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold badge-${e.type}`}
+                  >
+                    {eventLabels[e.type]}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
