@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -17,6 +17,9 @@ import {
   Trash2,
   Hand,
   CircleDot,
+  Target,
+  Plus,
+  Zap,
 } from "lucide-react";
 
 const QUOTES = [
@@ -434,6 +437,187 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
         )}
         <AddButton onClick={onAddGoal}>Ziel hinzufügen</AddButton>
       </Card>
+
+      {/* Daily Focus mini-widget */}
+      <DailyFocusMini today={today} refreshKey={refreshKey} />
+
+      {/* Homework Quick Capture */}
+      <HomeworkCapture refreshKey={refreshKey} onToast={() => {}} />
     </div>
+  );
+}
+
+// ─── Daily Focus Mini Widget ──────────────────────────────────────────────────
+function DailyFocusMini({ today, refreshKey }: { today: string; refreshKey: number }) {
+  const [focus, setFocus] = useState<{ school: string; health: string; personal: string } | null>(null);
+
+  useEffect(() => {
+    DB.get<{ school: string; health: string; personal: string } | null>(`daily_focus_${today}`, null).then(setFocus);
+  }, [today, refreshKey]);
+
+  if (!focus || (!focus.school && !focus.health && !focus.personal)) return null;
+
+  const items = [
+    { key: "school" as const, emoji: "📚", color: "#60a5fa" },
+    { key: "health" as const, emoji: "💪", color: "#4ade80" },
+    { key: "personal" as const, emoji: "✨", color: "#a78bfa" },
+  ].filter(i => focus[i.key]);
+
+  return (
+    <Card>
+      <CardTitle icon={Target}>Heutiger Fokus</CardTitle>
+      <div className="flex gap-2 flex-wrap">
+        {items.map(({ key, emoji, color }) => (
+          <div key={key} className="flex items-center gap-1.5 bg-[#1e2535] rounded-xl px-3 py-1.5 text-[13px]">
+            <span>{emoji}</span>
+            <span style={{ color }} className="font-medium">{focus[key]}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Homework Quick Capture ───────────────────────────────────────────────────
+interface HomeworkItem {
+  id: number;
+  text: string;
+  subject?: string;
+  dueDate?: string;
+  done: boolean;
+  createdAt: string;
+}
+
+const SUBJECT_SHORTCUTS: Record<string, string> = {
+  math: "Mathe", mathe: "Mathe", m: "Mathe",
+  deutsch: "Deutsch", de: "Deutsch", d: "Deutsch",
+  englisch: "Englisch", en: "Englisch", e: "Englisch",
+  physik: "Physik", ph: "Physik",
+  chemie: "Chemie", ch: "Chemie",
+  bio: "Biologie", biologie: "Biologie",
+  geo: "Geografie", geografie: "Geografie",
+  geschichte: "Geschichte", ge: "Geschichte",
+  sport: "Sport", sp: "Sport",
+  kunst: "Kunst", ku: "Kunst",
+};
+
+const WEEKDAYS: Record<string, number> = {
+  montag: 1, mo: 1, dienstag: 2, di: 2, mittwoch: 3, mi: 3,
+  donnerstag: 4, do: 4, freitag: 5, fr: 5, samstag: 6, sa: 6, sonntag: 0, so: 0,
+};
+
+function parseHomework(raw: string): Partial<HomeworkItem> {
+  const parts = raw.trim().split(/\s+/);
+  let subject: string | undefined;
+  let dueDate: string | undefined;
+  const textParts: string[] = [];
+
+  for (const part of parts) {
+    const lower = part.toLowerCase().replace(/[.,!?]$/, "");
+    if (SUBJECT_SHORTCUTS[lower]) {
+      subject = SUBJECT_SHORTCUTS[lower];
+    } else if (WEEKDAYS[lower] !== undefined) {
+      const target = WEEKDAYS[lower];
+      const now = new Date();
+      const diff = ((target - now.getDay()) + 7) % 7 || 7;
+      const due = new Date(now);
+      due.setDate(due.getDate() + diff);
+      dueDate = due.toISOString().split("T")[0];
+    } else {
+      textParts.push(part);
+    }
+  }
+
+  return { subject, dueDate, text: textParts.join(" ") || raw };
+}
+
+function HomeworkCapture({ refreshKey, onToast }: { refreshKey: number; onToast: (m: string) => void }) {
+  const [items, setItems] = useState<HomeworkItem[]>([]);
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    DB.get<HomeworkItem[]>("homework", []).then(setItems);
+  }, [refreshKey]);
+
+  const add = async () => {
+    if (!input.trim()) return;
+    const parsed = parseHomework(input);
+    const item: HomeworkItem = {
+      id: Date.now(),
+      text: parsed.text || input,
+      subject: parsed.subject,
+      dueDate: parsed.dueDate,
+      done: false,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [item, ...items];
+    setItems(updated);
+    await DB.set("homework", updated);
+    setInput("");
+    inputRef.current?.focus();
+  };
+
+  const toggle = async (id: number) => {
+    const updated = items.map(i => i.id === id ? { ...i, done: !i.done } : i);
+    setItems(updated);
+    await DB.set("homework", updated);
+  };
+
+  const remove = async (id: number) => {
+    const updated = items.filter(i => i.id !== id);
+    setItems(updated);
+    await DB.set("homework", updated);
+  };
+
+  const active = items.filter(i => !i.done);
+  const done = items.filter(i => i.done);
+
+  return (
+    <Card>
+      <CardTitle icon={Zap}>Hausaufgaben</CardTitle>
+      <div className="flex gap-2 mb-3">
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && add()}
+          placeholder='z.B. "Mathe S.42 Freitag"'
+          className="flex-1 bg-[#1e2535] border border-white/[0.12] rounded-xl px-3 py-2 text-[13px] text-[#f0f2f7] placeholder-[#4a5568] focus:outline-none focus:border-[#4f8ef7] transition-colors"
+        />
+        <button
+          onClick={add}
+          disabled={!input.trim()}
+          className="bg-[#4f8ef7]/20 text-[#4f8ef7] rounded-xl px-3 flex items-center disabled:opacity-40 hover:bg-[#4f8ef7]/30 transition-colors"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      <p className="text-[11px] text-[#4a5568] mb-3">Tipp: Fach + Tag automatisch erkannt (z.B. "Mathe Freitag")</p>
+
+      {active.length === 0 && <p className="text-[13px] text-[#4a5568] text-center py-2">Keine offenen Hausaufgaben ✓</p>}
+
+      {active.map(item => (
+        <div key={item.id} className="flex items-center gap-2.5 py-2 border-b border-white/[0.05] last:border-0">
+          <button onClick={() => toggle(item.id)} className="w-5 h-5 rounded border border-white/20 flex items-center justify-center shrink-0 hover:border-[#4ade80] transition-colors">
+            <span className="text-[10px] opacity-0 hover:opacity-100">✓</span>
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px]">{item.text}</p>
+            <div className="flex gap-2 mt-0.5">
+              {item.subject && <span className="text-[10px] text-[#60a5fa]">{item.subject}</span>}
+              {item.dueDate && <span className="text-[10px] text-[#f59e0b]">{new Date(item.dueDate + "T12:00:00").toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })}</span>}
+            </div>
+          </div>
+          <button onClick={() => remove(item.id)} className="text-[#4a5568] hover:text-[#f87171] p-1 transition-colors">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      ))}
+
+      {done.length > 0 && (
+        <p className="text-[11px] text-[#4a5568] text-center mt-2">{done.length} erledigt</p>
+      )}
+    </Card>
   );
 }

@@ -7,6 +7,7 @@ import { CalendarPage } from "@/components/pages/CalendarPage";
 import { LearnPage } from "@/components/pages/LearnPage";
 import { FitnessPage } from "@/components/pages/FitnessPage";
 import { ProfilePage } from "@/components/pages/ProfilePage";
+import { MindPage } from "@/components/pages/MindPage";
 import { EventModal } from "@/components/modals/EventModal";
 import { GoalModal } from "@/components/modals/GoalModal";
 import { ExamModal } from "@/components/modals/ExamModal";
@@ -24,6 +25,7 @@ const NAV_ITEMS: { id: NavPage; icon: string; label: string }[] = [
   { id: "cal", icon: "fa-calendar-days", label: "Kalender" },
   { id: "learn", icon: "fa-brain", label: "Lernen" },
   { id: "fit", icon: "fa-dumbbell", label: "Fitness" },
+  { id: "mind", icon: "fa-spa", label: "Mind" },
   { id: "profile", icon: "fa-user", label: "Profil" },
 ];
 
@@ -130,6 +132,9 @@ export default function Dashboard() {
               onToast={toast}
               refreshKey={refreshKey}
             />
+          )}
+          {page === "mind" && (
+            <MindPage refreshKey={refreshKey} />
           )}
           {page === "profile" && (
             <ProfilePage

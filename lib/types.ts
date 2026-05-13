@@ -69,4 +69,41 @@ export interface LongGoal {
   done: boolean;
 }
 
-export type NavPage = "home" | "cal" | "learn" | "fit" | "profile";
+export type NavPage = "home" | "cal" | "learn" | "fit" | "mind" | "profile";
+
+// Brain Dump
+export interface BrainItem {
+  id: number;
+  text: string;
+  tag?: string;
+  createdAt: string;
+  done: boolean;
+  archived: boolean;
+  convertedTo?: "task" | "event" | "goal";
+}
+
+// Routine step
+export interface RoutineStep {
+  id: number;
+  text: string;
+  category: "health" | "hygiene" | "planning" | "mindset" | "other";
+  estimatedMin: number;
+  hasTimer: boolean;
+}
+
+// Daily focus
+export interface DailyFocus {
+  school: string;
+  health: string;
+  personal: string;
+  date: string;
+}
+
+// Mood entry
+export interface MoodEntry {
+  date: string;
+  energy: number;
+  stress: number;
+  focus: number;
+  mood: number;
+}
