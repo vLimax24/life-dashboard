@@ -5,7 +5,7 @@ import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormInput } from "@/components/ui/Modal";
 import * as DB from "@/lib/db";
-import { getStreak } from "@/lib/streaks";
+import { computeStreak } from "@/lib/streaks";
 import type { LongGoal } from "@/lib/types";
 import { User, BarChart2, Trophy, Trash2 } from "lucide-react";
 
@@ -29,36 +29,37 @@ export function ProfilePage({ onAddLongGoal, onToast, refreshKey }: Props) {
   });
 
   const load = useCallback(async () => {
-    const [n, k, kc, pr, lg, ts, ws, evs] = await Promise.all([
-      DB.get<string>("profile_name", ""),
-      DB.get<string>("profile_class", "11. Klasse"),
-      DB.get<number>("profile_kcal", 2500),
-      DB.get<number>("profile_protein", 150),
-      DB.get<LongGoal[]>("long_goals", []),
-      getStreak("workout_"),
-      getStreak("water_"),
-      DB.get<unknown[]>("events", []),
+    const scalarKeys = [
+      "profile_name", "profile_class", "profile_kcal",
+      "profile_protein", "long_goals", "events",
+    ];
+    const [scalars, workoutMap, waterMap, studyMap] = await Promise.all([
+      DB.getMany<unknown>(scalarKeys, null),
+      DB.getByPrefix<number>("workout_"),
+      DB.getByPrefix<number>("water_"),
+      DB.getByPrefix<number>("study_"),
     ]);
-    setName(n);
-    setKlass(k);
-    setKcal(String(kc));
-    setProtein(String(pr));
-    setLongGoals(lg);
 
+    setName((scalars["profile_name"] as string) ?? "");
+    setKlass((scalars["profile_class"] as string) ?? "11. Klasse");
+    setKcal(String((scalars["profile_kcal"] as number) ?? 2500));
+    setProtein(String((scalars["profile_protein"] as number) ?? 150));
+    setLongGoals((scalars["long_goals"] as LongGoal[]) ?? []);
+
+    const evs = (scalars["events"] as unknown[]) ?? [];
+
+    // Count study days in last 30 days from the already-fetched map
     let studyDays = 0;
     for (let i = 0; i < 30; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const val = await DB.get<number>(
-        "study_" + d.toISOString().split("T")[0],
-        0,
-      );
-      if (val) studyDays++;
+      const key = "study_" + d.toISOString().split("T")[0];
+      if (studyMap[key]) studyDays++;
     }
 
     setStats({
-      trainStreak: ts,
-      waterStreak: ws,
+      trainStreak: computeStreak(workoutMap, "workout_", 1),
+      waterStreak: computeStreak(waterMap, "water_", 8),
       studyDays,
       events: evs.length,
     });

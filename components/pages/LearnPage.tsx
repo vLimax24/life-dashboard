@@ -58,20 +58,20 @@ export function LearnPage({ onAddExam, onToast, refreshKey }: Props) {
   const chatRef = useRef<HTMLDivElement>(null);
 
   const loadExams = useCallback(async () => {
-    const all = await DB.get<ExamPlan[]>("exam_plans", []);
+    const [all, sessionsVal] = await Promise.all([
+      DB.get<ExamPlan[]>("exam_plans", []),
+      DB.get<number>("timer_sessions_" + today, 0),
+    ]);
     const filtered = all.filter((e) => e.date >= today);
     setExams(filtered);
-    setSessions(await DB.get<number>("timer_sessions_" + today, 0));
+    setSessions(sessionsVal);
 
-    // Load prep done state for all steps
-    const doneMap: Record<string, boolean> = {};
-    for (const exam of filtered) {
-      for (const p of exam.plan) {
-        const key = "prep_done_" + exam.id + "_" + p.date;
-        doneMap[key] = await DB.get<boolean>(key, false);
-      }
-    }
-    setPrepDone(doneMap);
+    // Batch-fetch all prep_done keys in ONE request
+    const allKeys = filtered.flatMap((exam) =>
+      exam.plan.map((p) => "prep_done_" + exam.id + "_" + p.date)
+    );
+    const batch = await DB.getMany<boolean>(allKeys, false);
+    setPrepDone(batch);
   }, [today]);
 
   useEffect(() => {

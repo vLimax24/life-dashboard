@@ -6,7 +6,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StreakGrid } from "@/components/ui/StreakGrid";
 import * as DB from "@/lib/db";
-import { getStreak } from "@/lib/streaks";
+import { computeStreak } from "@/lib/streaks";
 import type {
   Workout,
   FootballEntry,
@@ -52,26 +52,32 @@ export function FitnessPage({
   const [fbGoals, setFbGoals] = useState<FootballGoal[]>([]);
   const [foods, setFoods] = useState<FoodEntry[]>([]);
   const [workoutStreak, setWorkoutStreak] = useState(0);
+  const [workoutMap, setWorkoutMap] = useState<Record<string, number>>({});
   const [profileKcal, setProfileKcal] = useState(2500);
   const [profileProt, setProfileProt] = useState(150);
 
   const load = useCallback(async () => {
-    const [w, fb, fbg, f, s, pk, pp] = await Promise.all([
-      DB.get<Workout[]>("workouts_" + today, []),
-      DB.get<FootballEntry[]>("football_entries", []),
-      DB.get<FootballGoal[]>("football_goals", []),
-      DB.get<FoodEntry[]>("food_" + today, []),
-      getStreak("workout_"),
-      DB.get<number>("profile_kcal", 2500),
-      DB.get<number>("profile_protein", 150),
+    const scalarKeys = [
+      "workouts_" + today,
+      "football_entries",
+      "football_goals",
+      "food_" + today,
+      "profile_kcal",
+      "profile_protein",
+    ];
+    const [scalars, wMap] = await Promise.all([
+      DB.getMany<unknown>(scalarKeys, null),
+      DB.getByPrefix<number>("workout_"),
     ]);
-    setWorkouts(w);
-    setFbEntries(fb);
-    setFbGoals(fbg);
-    setFoods(f);
-    setWorkoutStreak(s);
-    setProfileKcal(pk);
-    setProfileProt(pp);
+
+    setWorkouts((scalars["workouts_" + today] as Workout[]) ?? []);
+    setFbEntries((scalars["football_entries"] as FootballEntry[]) ?? []);
+    setFbGoals((scalars["football_goals"] as FootballGoal[]) ?? []);
+    setFoods((scalars["food_" + today] as FoodEntry[]) ?? []);
+    setWorkoutMap(wMap);
+    setWorkoutStreak(computeStreak(wMap, "workout_", 1));
+    setProfileKcal((scalars["profile_kcal"] as number) ?? 2500);
+    setProfileProt((scalars["profile_protein"] as number) ?? 150);
   }, [today]);
 
   useEffect(() => {
@@ -184,7 +190,7 @@ export function FitnessPage({
           </Card>
           <Card>
             <CardTitle icon={TrendingUp}>Trainingsstreak</CardTitle>
-            <StreakGrid prefix="workout_" target={1} color="#4ade80" />
+            <StreakGrid prefix="workout_" target={1} color="#4ade80" prefetchedMap={workoutMap} />
             <div className="flex justify-between mt-2">
               <span className="text-xs text-[#8892a4]">Aktueller Streak:</span>
               <span className="text-xs text-[#22c55e] font-mono">

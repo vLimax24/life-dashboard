@@ -5,7 +5,7 @@ import { AddButton } from "@/components/ui/AddButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StreakGrid } from "@/components/ui/StreakGrid";
 import * as DB from "@/lib/db";
-import { getStreak } from "@/lib/streaks";
+import { computeStreak } from "@/lib/streaks";
 import type { DailyGoal, Event, ExamPlan } from "@/lib/types";
 import {
   Droplets,
@@ -16,11 +16,6 @@ import {
   BookOpen,
   Trash2,
   Hand,
-  BookMarked,
-  Dumbbell,
-  Check,
-  AlertCircle,
-  AlertTriangle,
   CircleDot,
 } from "lucide-react";
 
@@ -31,6 +26,19 @@ const QUOTES = [
   '"Kleine Schritte täglich führen zu großen Ergebnissen."',
   '"Die Investition in Wissen bringt immer die besten Zinsen."',
   '"Nicht Talent, sondern Konsequenz entscheidet über Erfolg."',
+];
+
+interface StreakDef {
+  key: string;
+  label: string;
+  target: number;
+  color: string;
+}
+
+const STREAK_DEFS: StreakDef[] = [
+  { key: "water_", label: "💧 Wasser", target: 8, color: "#60a5fa" },
+  { key: "study_", label: "📚 Gelernt", target: 1, color: "#818cf8" },
+  { key: "workout_", label: "💪 Training", target: 1, color: "#4ade80" },
 ];
 
 interface Props {
@@ -48,35 +56,56 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
   const [goalDone, setGoalDone] = useState<Record<number, boolean>>({});
   const [events, setEvents] = useState<Event[]>([]);
   const [activePlan, setActivePlan] = useState<ExamPlan | null>(null);
-  const [streak, setStreak] = useState(0);
+  // streakMaps[prefix] = the full prefix map for that tracker
+  const [streakMaps, setStreakMaps] = useState<Record<string, Record<string, number>>>({});
+  const [streaks, setStreaks] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
-    const [w, n, allGoals, ev, exams, s] = await Promise.all([
-      DB.get<number>("water_" + today, 0),
-      DB.get<string>("profile_name", ""),
-      DB.get<DailyGoal[]>("daily_goals", []),
-      DB.get<Event[]>("events", []),
-      DB.get<ExamPlan[]>("exam_plans", []),
-      getStreak("water_"),
+    // One batch for scalar/list keys
+    const scalarKeys = ["profile_name", "daily_goals", "events", "exam_plans"];
+    const [scalars, waterMap, studyMap, workoutMap] = await Promise.all([
+      DB.getMany<unknown>(scalarKeys, null),
+      DB.getByPrefix<number>("water_"),
+      DB.getByPrefix<number>("study_"),
+      DB.getByPrefix<number>("workout_"),
     ]);
-    setWater(w);
+
+    const n = (scalars["profile_name"] as string) ?? "";
+    const allGoals = (scalars["daily_goals"] as DailyGoal[]) ?? [];
+    const ev = (scalars["events"] as Event[]) ?? [];
+    const exams = (scalars["exam_plans"] as ExamPlan[]) ?? [];
+
     setName(n);
-    setStreak(s);
+
+    const waterVal = (waterMap["water_" + today] ?? 0) as number;
+    setWater(waterVal);
+
+    // Compute all streaks from maps (no extra requests)
+    const maps: Record<string, Record<string, number>> = {
+      water_: waterMap,
+      study_: studyMap,
+      workout_: workoutMap,
+    };
+    setStreakMaps(maps);
+
+    const newStreaks: Record<string, number> = {};
+    for (const def of STREAK_DEFS) {
+      newStreaks[def.key] = computeStreak(maps[def.key], def.key, def.target);
+    }
+    setStreaks(newStreaks);
 
     const filtered = allGoals.filter(
-      (g) => g.repeat === "daily" || g.date === today,
+      (g) => g.repeat === "daily" || g.date === today
     );
     setGoals(filtered);
 
+    // Batch-fetch all goal_done keys for today in ONE request
+    const goalDoneKeys = filtered.map((g) => `goal_done_${g.id}_${today}`);
+    const doneBatch = await DB.getMany<boolean>(goalDoneKeys, false);
     const doneMap: Record<number, boolean> = {};
-    await Promise.all(
-      filtered.map(async (g) => {
-        doneMap[g.id] = await DB.get<boolean>(
-          "goal_done_" + g.id + "_" + today,
-          false,
-        );
-      }),
-    );
+    for (const g of filtered) {
+      doneMap[g.id] = doneBatch[`goal_done_${g.id}_${today}`] ?? false;
+    }
     setGoalDone(doneMap);
 
     setEvents(ev.filter((e) => e.date >= today).slice(0, 5));
@@ -93,7 +122,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
   }, [load, refreshKey]);
 
   const toggleWater = async (idx: number) => {
-    const cur = await DB.get<number>("water_" + today, 0);
+    const cur = water;
     const newVal = idx < cur ? idx : idx + 1;
     await DB.set("water_" + today, newVal);
     setWater(newVal);
@@ -101,7 +130,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
 
   const toggleGoal = async (id: number) => {
     const key = "goal_done_" + id + "_" + today;
-    const was = await DB.get<boolean>(key, false);
+    const was = goalDone[id] ?? false;
     await DB.set(key, !was);
     setGoalDone((prev) => ({ ...prev, [id]: !was }));
   };
@@ -110,7 +139,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
     const allGoals = await DB.get<DailyGoal[]>("daily_goals", []);
     await DB.set(
       "daily_goals",
-      allGoals.filter((g) => g.id !== id),
+      allGoals.filter((g) => g.id !== id)
     );
     load();
   };
@@ -146,6 +175,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
   }).length;
 
   const todayStep = activePlan?.plan.find((p) => p.date === today);
+  const waterStreak = streaks["water_"] ?? 0;
 
   return (
     <div>
@@ -169,7 +199,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
       <div className="grid grid-cols-2 gap-2.5 mb-3">
         {[
           {
-            val: streak,
+            val: waterStreak,
             label: "Tage Streak",
             icon: <Flame size={11} className="inline mr-0.5" />,
             color: "#22c55e",
@@ -245,23 +275,36 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
 
       <Card>
         <CardTitle icon={Flame}>Daily Streaks</CardTitle>
-        {[
-          { key: "water_", label: "💧 Wasser", target: 8, color: "#60a5fa" },
-          { key: "study_", label: "📚 Gelernt", target: 1, color: "#818cf8" },
-          {
-            key: "workout_",
-            label: "💪 Training",
-            target: 1,
-            color: "#4ade80",
-          },
-        ].map((def) => (
-          <AsyncStreakRow key={def.key} def={def} today={today} />
-        ))}
+        {STREAK_DEFS.map((def) => {
+          const map = streakMaps[def.key] ?? {};
+          const val = (map[def.key + today] ?? 0) as number;
+          const pct = Math.min(100, (val / def.target) * 100);
+          const s = streaks[def.key] ?? 0;
+          return (
+            <div key={def.key} className="flex items-center gap-2.5 mb-2">
+              <span className="text-[13px] font-medium w-[90px] shrink-0">
+                {def.label}
+              </span>
+              <div className="flex-1 h-1.5 bg-[#1e2535] rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: pct + "%", background: def.color }}
+                />
+              </div>
+              <span className="text-[12px] font-mono text-[#8892a4]">{s}d 🔥</span>
+            </div>
+          );
+        })}
         <div className="mt-3">
           <div className="text-[12px] text-[#8892a4] mb-1.5">
             Letzte 91 Tage
           </div>
-          <StreakGrid prefix="water_" target={8} color="#60a5fa" />
+          <StreakGrid
+            prefix="water_"
+            target={8}
+            color="#60a5fa"
+            prefetchedMap={streakMaps["water_"]}
+          />
         </div>
       </Card>
 
@@ -323,7 +366,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
               {Math.ceil(
                 (new Date(activePlan.date + "T12:00:00").getTime() -
                   Date.now()) /
-                  86400000,
+                  86400000
               )}{" "}
               Tage bis zur Prüfung
             </div>
@@ -344,7 +387,7 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
             {activePlan.subject} ·{" "}
             {Math.ceil(
               (new Date(activePlan.date + "T12:00:00").getTime() - Date.now()) /
-                86400000,
+                86400000
             )}{" "}
             Tage bis zur Prüfung
           </div>
@@ -391,39 +434,6 @@ export function HomePage({ onAddEvent, onAddGoal, refreshKey }: Props) {
         )}
         <AddButton onClick={onAddGoal}>Ziel hinzufügen</AddButton>
       </Card>
-    </div>
-  );
-}
-
-function AsyncStreakRow({
-  def,
-  today,
-}: {
-  def: { key: string; label: string; target: number; color: string };
-  today: string;
-}) {
-  const [s, setS] = useState(0);
-  const [val, setVal] = useState(0);
-
-  useEffect(() => {
-    getStreak(def.key).then(setS);
-    DB.get<number>(def.key + today, 0).then(setVal);
-  }, [def.key, today]);
-
-  const pct = Math.min(100, (val / def.target) * 100);
-
-  return (
-    <div className="flex items-center gap-2.5 mb-2">
-      <span className="text-[13px] font-medium w-[90px] shrink-0">
-        {def.label}
-      </span>
-      <div className="flex-1 h-1.5 bg-[#1e2535] rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{ width: pct + "%", background: def.color }}
-        />
-      </div>
-      <span className="text-[12px] font-mono text-[#8892a4]">{s}d 🔥</span>
     </div>
   );
 }

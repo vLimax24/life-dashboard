@@ -1,19 +1,25 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getStreakGridData } from "@/lib/streaks";
+import { getStreakGridData, computeStreakGridData } from "@/lib/streaks";
 
 interface StreakGridProps {
   prefix: string;
   target: number;
   color: string;
+  /** Optional: pass a pre-fetched map to skip the DB request entirely */
+  prefetchedMap?: Record<string, number>;
 }
 
-export function StreakGrid({ prefix, target, color }: StreakGridProps) {
+export function StreakGrid({ prefix, target, color, prefetchedMap }: StreakGridProps) {
   const [cells, setCells] = useState<{ val: number; date: string }[]>([]);
 
   useEffect(() => {
-    getStreakGridData(prefix, target).then(setCells);
-  }, [prefix, target]);
+    if (prefetchedMap) {
+      setCells(computeStreakGridData(prefetchedMap, prefix));
+    } else {
+      getStreakGridData(prefix, target).then(setCells);
+    }
+  }, [prefix, target, prefetchedMap]);
 
   if (!cells.length)
     return <div className="h-12 bg-[#1e2535] rounded animate-pulse" />;
